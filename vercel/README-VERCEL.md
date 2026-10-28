@@ -6,7 +6,7 @@ Panduan ini menyiapkan **salinan proyek ini** untuk deployment. Perubahan di kom
 
 1. Repository Vercel harus berisi `vercel.json`, `index.html`, `auth.js`, `api/`, dan `includes/` pada folder proyek yang sama.
 2. Di Vercel buka **Project → Settings → Build and Deployment**. Atur **Root Directory** ke folder yang berisi `vercel.json`. Jika file itu berada langsung di akar repository, gunakan `./`; jika ada di subfolder, pilih nama subfolder tersebut.
-3. Gunakan preset **Other**. Jangan isi Output Directory dengan `api` atau `public`; halaman HTML/CSS/JS ada di akar proyek. `vercel.json` mendaftarkan runtime PHP untuk halaman `.php` dan endpoint `api/*.php`.
+3. Gunakan preset **Other**. Jangan isi Output Directory dengan `api` atau `public`; halaman HTML/CSS/JS ada di akar proyek. Runtime PHP Vercel hanya didaftarkan untuk `api/*.php`; halaman PHP di akar dipetakan ke wrapper di `api/` oleh aturan route `vercel.json`.
 4. Pastikan GitHub/Vercel memakai branch yang sama dengan branch tempat perubahan di-commit.
 
 ## 2. Isi Environment Variables Vercel
@@ -37,7 +37,7 @@ Runtime memakai PDO MySQL dan TLS untuk koneksi remote. Tidak diperlukan alamat 
 
 1. Masukkan perubahan dari folder proyek ini ke repository GitHub yang dipakai proyek Vercel. Pastikan setidaknya berkas berikut ikut:
    - `vercel.json` dan `.vercelignore`
-   - `api/auth.php` dan `api/health.php`
+   - semua berkas PHP di `api/` (termasuk wrapper halaman seperti `api/dashboard.php`)
    - `includes/bootstrap.php`
    - `auth.js`
    - file halaman, CSS, JavaScript, dan gambar yang digunakan aplikasi

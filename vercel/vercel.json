@@ -2,15 +2,17 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "functions": {
-    "api/*.php": { "runtime": "vercel-php@0.9.0" },
-    "dashboard.php": { "runtime": "vercel-php@0.9.0" },
-    "index.php": { "runtime": "vercel-php@0.9.0" },
-    "login.php": { "runtime": "vercel-php@0.9.0" },
-    "logout.php": { "runtime": "vercel-php@0.9.0" },
-    "register.php": { "runtime": "vercel-php@0.9.0" },
-    "seller-products.php": { "runtime": "vercel-php@0.9.0" },
-    "setup_owner.php": { "runtime": "vercel-php@0.9.0" },
-    "shop.php": { "runtime": "vercel-php@0.9.0" },
-    "terms-consent.php": { "runtime": "vercel-php@0.9.0" }
-  }
+    "api/*.php": { "runtime": "vercel-php@0.9.0" }
+  },
+  "routes": [
+    { "src": "^/dashboard[.]php$", "dest": "/api/dashboard.php" },
+    { "src": "^/index[.]php$", "dest": "/api/index.php" },
+    { "src": "^/login[.]php$", "dest": "/api/login.php" },
+    { "src": "^/logout[.]php$", "dest": "/api/logout.php" },
+    { "src": "^/register[.]php$", "dest": "/api/register.php" },
+    { "src": "^/seller-products[.]php$", "dest": "/api/seller-products.php" },
+    { "src": "^/setup_owner[.]php$", "dest": "/api/setup_owner.php" },
+    { "src": "^/shop[.]php$", "dest": "/api/shop.php" },
+    { "src": "^/terms-consent[.]php$", "dest": "/api/terms-consent.php" }
+  ]
 }
