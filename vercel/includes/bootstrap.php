@@ -1,16 +1,17 @@
 <?php
 declare(strict_types=1);
 
-$env = static function (string $name, ?string $fallback = null): ?string {
+$envValue = static function (string $name, ?string $fallback = null): ?string {
     $value = getenv($name);
     return $value === false || $value === '' ? $fallback : $value;
 };
-$tidbHost = $env('TIDB_HOST');
-$dbHost = $env('DB_HOST', $tidbHost ?? '127.0.0.1');
-$dbPort = $env('DB_PORT', $env('TIDB_PORT', $tidbHost ? '4000' : '3306'));
-$dbName = $env('DB_NAME', $env('TIDB_DATABASE', 'toko_online'));
-$dbUser = $env('DB_USER', $env('TIDB_USER', 'root'));
-$dbPass = $env('DB_PASS', $env('TIDB_PASSWORD', ''));
+$tidbHost = $envValue('TIDB_HOST');
+$dbHost = $envValue('DB_HOST', $tidbHost ?? '127.0.0.1');
+$dbPort = $envValue('DB_PORT', $envValue('TIDB_PORT', $tidbHost ? '4000' : '3306'));
+$dbName = $envValue('DB_NAME', $envValue('TIDB_DATABASE', 'toko_online'));
+$dbUser = $envValue('DB_USER', $envValue('TIDB_USER', 'root'));
+$dbPass = $envValue('DB_PASS', $envValue('TIDB_PASSWORD', ''));
+$isApiRequest = str_contains((string)($_SERVER['SCRIPT_NAME'] ?? ''), '/api/');
 
 try {
     $options = [
@@ -19,43 +20,30 @@ try {
         PDO::ATTR_EMULATE_PREPARES => false,
         PDO::ATTR_TIMEOUT => 8,
     ];
-    $remoteDb = !in_array(strtolower($dbHost), ['localhost', '127.0.0.1', '::1'], true);
-    if ($remoteDb) {
-        if (!defined('PDO::MYSQL_ATTR_SSL_CA')) {
-            throw new PDOException('PDO MySQL SSL support is unavailable in the PHP runtime.');
-        }
-        $caPath = $env('DB_SSL_CA');
+    $remoteDatabase = !in_array(strtolower($dbHost), ['localhost', '127.0.0.1', '::1'], true);
+    if ($remoteDatabase) {
+        if (!defined('PDO::MYSQL_ATTR_SSL_CA')) throw new PDOException('PDO MySQL TLS support is unavailable.');
+        $caPath = $envValue('DB_SSL_CA');
         if (!$caPath) {
             foreach(['/etc/ssl/certs/ca-certificates.crt','/etc/pki/tls/certs/ca-bundle.crt','/etc/ssl/cert.pem'] as $candidate) {
                 if (is_file($candidate)) { $caPath = $candidate; break; }
             }
         }
-        if (!$caPath || !is_file($caPath)) {
-            throw new PDOException('Trusted CA bundle not found. Set DB_SSL_CA to a trusted CA file path for the remote database.');
-        }
+        if (!$caPath || !is_file($caPath)) throw new PDOException('A trusted CA bundle is required for remote database TLS. Set DB_SSL_CA if needed.');
         $options[PDO::MYSQL_ATTR_SSL_CA] = $caPath;
         if (defined('PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT')) $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = true;
     }
     $pdo = new PDO("mysql:host={$dbHost};port={$dbPort};dbname={$dbName};charset=utf8mb4", $dbUser, $dbPass, $options);
 } catch (PDOException $exception) {
-    error_log('ShopPoliteknik DB connection failed: ' . $exception->getMessage());
+    error_log('ShopPoliteknik database connection failed: ' . $exception->getMessage());
     http_response_code(503);
-    if (str_contains((string)($_SERVER['SCRIPT_NAME'] ?? ''), '/api/')) {
+    if ($isApiRequest) {
         header('Content-Type: application/json; charset=utf-8');
-        echo json_encode(['ok' => false, 'message' => 'Database belum tersambung. Periksa variabel DB/TIDB, sertifikat TLS, dan skema di Vercel.'], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['ok' => false, 'message' => 'Database TiDB belum tersambung. Periksa TIDB_HOST, TIDB_PORT, TIDB_USER, TIDB_PASSWORD, TIDB_DATABASE, TLS, dan skema database.'], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
         exit;
     }
-    exit('Database belum tersambung. Periksa variabel DB/TIDB, sertifikat TLS, dan skema di Vercel.');
+    exit('Database belum tersambung. Periksa variabel koneksi TiDB di pengaturan deployment.');
 }
-ini_set('session.use_strict_mode', '1');
-session_name('SPSESSID');
-session_set_cookie_params([
-    'lifetime' => 0,
-    'path' => '/',
-    'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
-    'httponly' => true,
-    'samesite' => 'Lax',
-]);
 
 final class PdoSessionHandler implements SessionHandlerInterface
 {
@@ -87,11 +75,29 @@ final class PdoSessionHandler implements SessionHandlerInterface
     }
 }
 
-if (!session_set_save_handler(new PdoSessionHandler($pdo), true)) {
+ini_set('session.use_strict_mode', '1');
+session_name('SPSESSID');
+$https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path' => '/',
+    'secure' => $https,
+    'httponly' => true,
+    'samesite' => 'Lax',
+]);
+try {
+    if (!session_set_save_handler(new PdoSessionHandler($pdo), true)) throw new RuntimeException('Unable to register persistent session handler.');
+    session_start();
+} catch (Throwable $exception) {
+    error_log('ShopPoliteknik session initialization failed: ' . $exception->getMessage());
     http_response_code(503);
-    exit('Penyimpanan sesi belum siap. Impor database.vercel.sql terlebih dahulu.');
+    if ($isApiRequest) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => false, 'message' => 'Tabel sesi app_sessions belum tersedia. Jalankan database_vercel.sql di TiDB.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    exit('Tabel sesi app_sessions belum tersedia. Jalankan database_vercel.sql di TiDB.');
 }
-session_start();
 try {
     $pdo->exec("CREATE TABLE IF NOT EXISTS user_activity (user_id BIGINT UNSIGNED PRIMARY KEY, last_seen_at DATETIME NOT NULL, CONSTRAINT fk_activity_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB");
 } catch (PDOException $exception) {
@@ -104,57 +110,6 @@ try {
     // Registration remains available if an administrator restricts automatic table creation.
 }
 
-function notify_user(int $userId, string $type, string $title, string $message, string $url = 'dashboard.php'): void
-{
-    global $pdo;
-    if ($userId < 1 || !marketplace_schema_ready()) return;
-    try {
-        $stmt = $pdo->prepare('INSERT INTO notifications (user_id,type,title,message,target_url) VALUES (?,?,?,?,?)');
-        $stmt->execute([$userId,$type,$title,$message,$url]);
-    } catch (PDOException $exception) {
-        error_log('ShopPoliteknik notification write failed: ' . $exception->getMessage());
-    }
-}
-
-function notify_role(string $role, string $type, string $title, string $message, string $url = 'dashboard.php'): void
-{
-    global $pdo;
-    if (!marketplace_schema_ready()) return;
-    try {
-        $stmt = $pdo->prepare('INSERT INTO notifications (user_id,type,title,message,target_url) SELECT id,?,?,?,? FROM users WHERE role=? AND is_active=1');
-        $stmt->execute([$type,$title,$message,$url,$role]);
-    } catch (PDOException $exception) {
-        error_log('ShopPoliteknik notification write failed: ' . $exception->getMessage());
-    }
-}
-
-function marketplace_schema_ready(): bool
-{
-    global $pdo;
-    try {
-        $columns=$pdo->query("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND ((table_name='users' AND column_name='owner_singleton') OR (table_name='products' AND column_name='review_status') OR (table_name='order_items' AND column_name='status'))")->fetchColumn();
-        $table=$pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='notifications'")->fetchColumn();
-        $ownerIndex=$pdo->query("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='users' AND index_name='uq_users_single_owner' AND non_unique=0")->fetchColumn();
-        return (int)$columns===3 && (int)$table===1 && (int)$ownerIndex===1;
-    } catch (PDOException $exception) {
-        return false;
-    }
-}
-
-function require_marketplace_schema(): void
-{
-    if (!marketplace_schema_ready()) {
-        http_response_code(503);
-        exit('Fitur produk, pesanan, dan notifikasi belum siap. Impor migrations/003_marketplace_workflow.sql ke database toko_online melalui phpMyAdmin, lalu muat ulang halaman.');
-    }
-}
-
-function sync_order_status(int $orderId): void
-{
-    global $pdo;
-    $stmt=$pdo->prepare("UPDATE orders o SET status=(SELECT CASE WHEN SUM(status='selesai')=COUNT(*) THEN 'selesai' WHEN SUM(status='dikirim')>0 THEN 'dikirim' WHEN SUM(status='diproses')>0 THEN 'diproses' WHEN SUM(status='dibatalkan')=COUNT(*) THEN 'dibatalkan' ELSE 'baru' END FROM order_items WHERE order_id=o.id) WHERE o.id=?");
-    $stmt->execute([$orderId]);
-}
 function h(string|int|null $value): string
 {
     return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -190,13 +145,26 @@ function user(): ?array
     return $current;
 }
 
+function has_current_terms_consent(array $current): bool
+{
+    global $pdo;
+    if (!in_array($current['role'] ?? '', ['customer','seller'], true)) return true;
+    try {
+        $stmt = $pdo->prepare('SELECT d.id FROM terms_documents d WHERE d.audience=? AND d.is_active=1 ORDER BY d.published_at DESC,d.id DESC LIMIT 1');
+        $stmt->execute([$current['role']]); $documentId = $stmt->fetchColumn();
+        if (!$documentId) return true;
+        $check = $pdo->prepare('SELECT 1 FROM terms_acceptances WHERE user_id=? AND terms_document_id=?');
+        $check->execute([(int)$current['id'],(int)$documentId]);
+        return (bool)$check->fetchColumn();
+    } catch (PDOException $exception) { return true; }
+}
+
 function require_login(): array
 {
-    if (!user()) {
-        header('Location: masuk.html');
-        exit;
-    }
-    return user();
+    $current = user();
+    if (!$current) { header('Location: masuk.html'); exit; }
+    if (!has_current_terms_consent($current) && basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) !== 'terms-consent.php') { header('Location: terms-consent.php'); exit; }
+    return $current;
 }
 
 function require_role(string ...$roles): array
@@ -222,19 +190,19 @@ function redirect(string $location): never
 
 function layout_start(string $title): void
 {
-    global $pdo;
-$current = user();
-    $homeLink = $current ? 'shop.php' : 'beranda.php';
+    $current = user();
+    $homeLink = $current ? 'shop.php' : 'index.html';
     echo '<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">';
     echo '<title>' . h($title) . ' · ShopPoliteknik</title><link rel="stylesheet" href="style.css"><script defer src="presence.js"></script></head><body class="app-body">';
     echo '<header class="app-topbar"><a class="brand" href="' . $homeLink . '"><span class="brand-mark">SP</span> Shop<span>Politeknik</span></a><nav>';
+    if ($current && $current['role']==='customer') echo '<a href="shop.php">Toko</a>';
+    if ($current && $current['role']==='seller') echo '<a href="seller-products.php">Kelola produk</a>';
     if ($current) {
-        $unreadNav=0;try{$navCount=$pdo->prepare('SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0');$navCount->execute([(int)$current['id']]);$unreadNav=(int)$navCount->fetchColumn();}catch(PDOException $exception){$unreadNav=0;}
-        echo '<a href="shop.php">Toko</a><a class="notification-link" href="notifications.php" aria-label="Notifikasi">🔔 <span>Notifikasi</span><b class="notification-count">' . $unreadNav . '</b></a><a href="orders.php">Pesanan</a>';
-        if($current['role']==='seller') echo '<a href="seller_products.php">Produk saya</a>';
-        if($current['role']==='owner') echo '<a href="owner_products.php">Persetujuan produk</a>';
-        echo '<a href="dashboard.php">Dashboard</a><span class="user-chip">' . h($current['name']) . ' · ' . h(ucfirst($current['role'])) . '</span><form method="post" action="logout.php"><input type="hidden" name="csrf" value="' . h(csrf_token()) . '"><button class="text-button">Keluar</button></form>';
-    } else echo '<a href="masuk.html">Masuk</a><a class="nav-cta" href="daftar.html">Daftar</a>';
+        $unread=0; try{$count=$pdo->prepare('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND is_read=0');$count->execute([(int)$current['id']]);$unread=(int)$count->fetchColumn();}catch(PDOException $exception){}
+        echo '<a href="dashboard.php">Dashboard</a><a href="notifications.php">Notifikasi'.($unread?' <b class="notification-count">'.$unread.'</b>':'').'</a>';
+    }
+    if ($current) echo '<span class="user-chip">' . h($current['name']) . ' · ' . h(ucfirst($current['role'])) . '</span><form method="post" action="logout.php"><input type="hidden" name="csrf" value="' . h(csrf_token()) . '"><button class="text-button">Keluar</button></form>';
+    else echo '<a href="masuk.html">Masuk</a><a class="nav-cta" href="daftar.html">Daftar</a>';
     echo '</nav></header><main class="app-main">';
 }
 
@@ -255,14 +223,3 @@ function show_flash(): void
     unset($_SESSION['flash']);
     echo '<div class="notice ' . h($notice['type']) . '" role="status">' . h($notice['message']) . '</div>';
 }
-
-
-
-
-
-
-
-
-
-
-
