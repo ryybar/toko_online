@@ -6,12 +6,29 @@ $envValue = static function (string $name, ?string $fallback = null): ?string {
     return $value === false || $value === '' ? $fallback : $value;
 };
 $tidbHost = $envValue('TIDB_HOST');
-$dbHost = $envValue('DB_HOST', $tidbHost ?? '127.0.0.1');
-$dbPort = $envValue('DB_PORT', $envValue('TIDB_PORT', $tidbHost ? '4000' : '3306'));
-$dbName = $envValue('DB_NAME', $envValue('TIDB_DATABASE', 'toko_online'));
-$dbUser = $envValue('DB_USER', $envValue('TIDB_USER', 'root'));
-$dbPass = $envValue('DB_PASS', $envValue('TIDB_PASSWORD', ''));
+$isVercel = $envValue('VERCEL') === '1' || $envValue('VERCEL_ENV') !== null;
+$dbHost = $envValue('TIDB_HOST', $envValue('DB_HOST', $isVercel ? null : '127.0.0.1'));
+$dbPort = $envValue('TIDB_PORT', $envValue('DB_PORT', $isVercel ? null : '3306'));
+$dbName = $envValue('TIDB_DATABASE', $envValue('DB_NAME', $isVercel ? null : 'toko_online'));
+$dbUser = $envValue('TIDB_USER', $envValue('DB_USER', $isVercel ? null : 'root'));
+$dbPass = $envValue('TIDB_PASSWORD', $envValue('DB_PASS', $isVercel ? null : ''));
 $isApiRequest = str_contains((string)($_SERVER['SCRIPT_NAME'] ?? ''), '/api/');
+
+$missingDatabaseSettings = [];
+foreach (['TIDB_HOST' => $dbHost, 'TIDB_PORT' => $dbPort, 'TIDB_DATABASE' => $dbName, 'TIDB_USER' => $dbUser, 'TIDB_PASSWORD' => $dbPass] as $setting => $value) {
+    if ($value === null || $value === '') $missingDatabaseSettings[] = $setting;
+}
+if ($isVercel && $missingDatabaseSettings) {
+    error_log('ShopPoliteknik missing Vercel database environment variables: ' . implode(', ', $missingDatabaseSettings));
+    http_response_code(503);
+    if ($isApiRequest) {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+        echo json_encode(['ok' => false, 'message' => 'Konfigurasi TiDB belum lengkap di Vercel. Periksa Environment Variables Production.']);
+        exit;
+    }
+    exit('Konfigurasi database TiDB belum lengkap di deployment.');
+}
 
 try {
     $options = [
@@ -39,6 +56,7 @@ try {
     http_response_code(503);
     if ($isApiRequest) {
         header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
         echo json_encode(['ok' => false, 'message' => 'Database TiDB belum tersambung. Periksa TIDB_HOST, TIDB_PORT, TIDB_USER, TIDB_PASSWORD, TIDB_DATABASE, TLS, dan skema database.'], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
         exit;
     }

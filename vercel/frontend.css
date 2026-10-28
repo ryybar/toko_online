@@ -13,3 +13,8 @@
 
 /* Seller application form fields */
 .sp-auth-card textarea{width:100%;min-height:96px;padding:13px 15px;border:1px solid #ddd8cf;border-radius:12px;background:#fff;font:inherit;resize:vertical;color:#282923}.sp-auth-card textarea:focus{outline:2px solid #d77f5d;outline-offset:1px}.sp-auth-card [data-seller-registration-fields] .sp-form-grid{margin-top:14px}.sp-auth-card .sp-hint{font-size:.83rem;line-height:1.55;color:#77736b}
+
+.terms-preview{border:1px solid #ddd8cf;border-radius:12px;padding:14px;margin:18px 0 10px;background:#fbfaf7}.terms-preview summary{cursor:pointer;font-weight:700}.terms-preview [data-terms-audience]{white-space:pre-wrap;max-height:190px;overflow:auto;margin-top:12px;font-size:.88rem;line-height:1.65;color:#5d5a53}.terms-checkbox{display:flex!important;align-items:flex-start;gap:10px;font-size:.88rem!important;line-height:1.5}.terms-checkbox input{width:18px!important;min-width:18px;margin:2px 0 0!important}.sp-auth-card textarea{width:100%;min-height:96px;padding:13px 15px;border:1px solid #ddd8cf;border-radius:12px;background:#fff;font:inherit;resize:vertical;color:#282923}.sp-auth-card textarea:focus{outline:2px solid #d77f5d;outline-offset:1px}
+
+[hidden]{display:none!important}
+

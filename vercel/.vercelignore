@@ -1,0 +1,7 @@
+# SQL skema dan dokumentasi konfigurasi digunakan secara lokal/TiDB, tidak perlu disajikan publik.
+/database.sql
+/database_vercel.sql
+/README.md
+/README-VERCEL.md
+/tools/**
+/migrations/**
