@@ -1,0 +1,30 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/router.php": {
+      "runtime": "vercel-php@0.9.0"
+    }
+  },
+  "routes": [
+    {
+      "src": "^/$",
+      "dest": "/api/router.php?route=beranda.php"
+    },
+    {
+      "dest": "/404.html",
+      "src": "^/(database\\.sql|database\\.vercel\\.sql|README\\.md|README-VERCEL\\.md|includes/.*|migrations/.*)$",
+      "status": 404
+    },
+    {
+      "src": "^/api/auth\\.php$",
+      "dest": "/api/router.php?route=api/auth.php"
+    },
+    {
+      "src": "^/([A-Za-z0-9_-]+)\\.php$",
+      "dest": "/api/router.php?route=$1.php"
+    },
+    {
+      "handle": "filesystem"
+    }
+  ]
+}
